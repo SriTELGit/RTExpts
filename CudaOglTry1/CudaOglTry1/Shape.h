@@ -12,7 +12,7 @@
 #include <vector>
 using namespace std;
 
-const float PI = 3.14159265359f;
+const float PI_def2 = 3.14159265359f;
 const float TWO_PI = 6.28318530718f;
 
 
@@ -198,7 +198,7 @@ public:
 
 					float xt = float(x) / X_SEG2;
 					float yt = float(y) / Y_SEG2;
-					pos = glm::vec3(sin(yt * PI) * cos(xt * TWO_PI), cos(yt * PI), sin(yt * PI) * sin(xt * TWO_PI)) * 0.5f;
+					pos = glm::vec3(sin(yt * PI_def2) * cos(xt * TWO_PI), cos(yt * PI_def2), sin(yt * PI_def2) * sin(xt * TWO_PI)) * 0.5f;
 					nt = glm::normalize(pos);
 
 					posTemp.push_back(pos);

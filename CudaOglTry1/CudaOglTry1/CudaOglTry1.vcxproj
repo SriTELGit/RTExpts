@@ -91,6 +91,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="CudaCode\camera.h" />
+    <ClInclude Include="CudaCode\hitable.h" />
+    <ClInclude Include="CudaCode\hitable_list.h" />
+    <ClInclude Include="CudaCode\material.h" />
+    <ClInclude Include="CudaCode\ray.h" />
+    <ClInclude Include="CudaCode\sphere.h" />
+    <ClInclude Include="CudaCode\vec3.h" />
     <ClInclude Include="defFS.h" />
     <ClInclude Include="defVS.h" />
     <ClInclude Include="FalseSkyFS.h" />

@@ -9,6 +9,8 @@
 #include <glm/gtx/rotate_vector.hpp>
 #include <glm/gtx/vector_angle.hpp>
 
+bool gFreezeCamPosForRT = false;
+
 class Camera {
 public:
 	glm::vec3 mPos;
@@ -18,6 +20,7 @@ public:
 
 	float mSpeed = 5.0f;
 	float mSensitivity = 5000.0f;
+	float mFOV = 45.0f;
 
 	int mWidth, mHeight;
 
@@ -32,7 +35,11 @@ public:
 		mPos = pos;
 	}
 
+	
+
 	void ProjMatrix(float fovDeg, float nearPlane, float farPlane) {
+
+		mFOV = fovDeg;
 
 		mProj = glm::perspective(glm::radians(fovDeg), (float)mWidth / (float)mHeight, nearPlane, farPlane);
 
@@ -44,6 +51,9 @@ public:
 	}
 
 	void Inputs(GLFWwindow* win, float dt) {
+
+
+		if (gFreezeCamPosForRT == true) return;
 
 		glm::vec3 rVec = glm::normalize(glm::cross(mLookAt, mUp));
 
