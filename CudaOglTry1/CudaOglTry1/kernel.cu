@@ -13,14 +13,26 @@
 
 using namespace std;
 
-const float PI = 3.14159265359f;
-const float TWO_PI = 6.28318530718f;
 
 
 const int RT_WIDTH = 1280;
 const int RT_HEIGHT = 720;
 const float ZNEAR = 0.1f;
 const float ZFAR = 100.0f;
+
+class SphInfo {
+public:
+    SphInfo(glm::vec3 pos, glm::vec4 alb, float r, int t, float rh ) : 
+        mSphPos(pos), mAlbedo(alb), mRad(r), mType(t), mRoughness(rh) {}
+
+    glm::vec3 mSphPos;
+    glm::vec4 mAlbedo;
+    float mRad;
+    int mType;
+    float mRoughness;
+};
+
+vector<SphInfo> gSphInfos;
 
 cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
@@ -40,28 +52,12 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    /*
-    //Triangles
-    float sqrt3 = float(sqrt(3));
 
     GLfloat vertices[] = {
-        -0.5f, -0.5f * sqrt3 / 3, 0.0,   1.0f, 0.00f, 0.02f,//lower left
-        0.5f, -0.5f * sqrt3 / 3, 0.0,    1.0f, 0.00f, 0.02f,//lower right
-        0.0f, 0.5f * sqrt3 * 2 / 3, 0.0, 0.0f, 0.00f, 0.92f,//upper
-
-        -0.5f/2, 0.5f*sqrt3/6, 0.0f,     0.1f, 0.95f, 0.17f,//inner left
-        0.5f/2, 0.5f*sqrt3/6, 0.0f,      0.1f, 0.95f, 0.17f,//inner right
-        0.0f, -0.5f*sqrt3/3, 0.0f,       1.0f, 0.00f, 0.02f,//inner down
-    };
-
-    GLuint indices[] = { 0,5,3, 5,1,4, 3,4,2 };
-    */
-
-    GLfloat vertices[] = {
-        -0.5f, -0.5f, 0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-        +0.5f, -0.5f, 0.0f,  0.0f, 1.0f, 0.0f, 1.0f, 0.0f,
-        +0.5f, +0.5f, 0.0f,  0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-        -0.5f, +0.5f, 0.0f,  1.0f, 1.0f, 1.0f, 0.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        +1.0f, -1.0f, 0.0f,  0.0f, 1.0f, 0.0f, 1.0f, 0.0f,
+        +1.0f, +1.0f, 0.0f,  0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+        -1.0f, +1.0f, 0.0f,  1.0f, 1.0f, 1.0f, 0.0f, 1.0f,
     };
 
     GLuint indices[] = { 0,1,2, 0,2,3};
@@ -101,11 +97,22 @@ int main()
 
 #pragma region OpenGL_code_viewport_clear_shader_while_poll_clean_up
 
-    glViewport(0, 0, RT_WIDTH, RT_HEIGHT);
+    
 
-    Shader shdrProg("defVS.h", "defFS.h");
+    glm::vec4 botSkyCol = glm::vec4(1, 1, 1, 1);
+    glm::vec4 topSkyCol = glm::vec4(0.5, 0.7, 1, 1);
+
+    gSphInfos.push_back(SphInfo(glm::vec3(0, 0, -1),            glm::vec4(0.1, 0.2, 0.5, 1), 0.5, 0, 1.0));
+    gSphInfos.push_back(SphInfo(glm::vec3(0, -100.5, -1),       glm::vec4(0.8, 0.8, 0.0, 1), 100, 0, 1.0));
+    gSphInfos.push_back(SphInfo(glm::vec3(1, 0, -1),            glm::vec4(0.8, 0.6, 0.2, 1), 0.5, 1, 0.8));
+
+
+    Shader shdrProgFalseSky("FalseSkyVS.h", "FalseSkyFS.h");
+    Shader lambertShdr("lambertVS.h", "lambertFS.h");
+    Shader shinyShdr("shinyVS.h", "shinyFS.h");
 
     Shape triShp(vertices, sizeof(vertices), indices, sizeof(indices));
+    Sphere sphShp; sphShp.Create();
 
     Texture tex0("brick.png");
 
@@ -114,14 +121,11 @@ int main()
     double currTime = prevTime;
 
     glm::mat4 model = glm::mat4(1.0f);
-    //glm::mat4 view = glm::mat4(1.0f);
-   // glm::mat4 proj = glm::mat4(1.0f);
 
     Camera cam(RT_WIDTH, RT_HEIGHT, glm::vec3(0.0f, 0.5f, 2.0f));
     cam.ViewMatrix(); cam.ProjMatrix(45.0f, ZNEAR, ZFAR);
-   // view = cam.mView;
-   // proj = cam.mProj;
     
+    glViewport(0, 0, RT_WIDTH, RT_HEIGHT);
 
     glClearColor(0.077f, 0.13f, 0.17f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -136,18 +140,56 @@ int main()
         float dTime = (currTime - prevTime);
         prevTime = currTime;
 
-        model = glm::rotate(model, glm::radians(50.0f*dTime), glm::vec3(0.0f, 1.0f, 0.0f));
 
         glClearColor(0.077f, 0.13f, 0.17f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        shdrProg.Activate();
-        tex0.ActivateAndBind();
-        //shdrProg.SetFloat("scale", 0.8f);
-        shdrProg.SetMat4("model", model);
-        shdrProg.SetMat4("view", cam.mView);
-        shdrProg.SetMat4("proj", cam.mProj);
-        shdrProg.SetInt("texture0", 0);
+
+        shdrProgFalseSky.Activate();
+        shdrProgFalseSky.SetVec4("botSkyColor", botSkyCol);
+        shdrProgFalseSky.SetVec4("topSkyColor", topSkyCol);
+        //tex0.ActivateAndBind();
+        //shdrProgFalseSky.SetInt("texture0", 0);
+
         triShp.Draw();
+
+        //draw lambertspheres
+        for (int i = 0; i < gSphInfos.size(); i++) {
+
+            model = glm::mat4(1.0f);
+            float sc = gSphInfos[i].mRad * 2.0f;
+            model = glm::translate(model, gSphInfos[i].mSphPos);
+            model = glm::scale(model, glm::vec3(sc,sc,sc));
+
+            if (gSphInfos[i].mType == 0) {
+
+                lambertShdr.Activate();
+                lambertShdr.SetMat4("model", model);
+                lambertShdr.SetMat4("view", cam.mView);
+                lambertShdr.SetMat4("proj", cam.mProj);
+                lambertShdr.SetVec4("botSkyColor", botSkyCol);
+                lambertShdr.SetVec4("topSkyColor", topSkyCol);
+                lambertShdr.SetVec4("albedo", gSphInfos[i].mAlbedo);
+
+            }
+            else if (gSphInfos[i].mType == 1) {
+
+                shinyShdr.Activate();
+                shinyShdr.SetMat4("model", model);
+                shinyShdr.SetMat4("view", cam.mView);
+                shinyShdr.SetMat4("proj", cam.mProj);
+                shinyShdr.SetVec3("camPosW", cam.mPos);
+                shinyShdr.SetVec4("botSkyColor", botSkyCol);
+                shinyShdr.SetVec4("topSkyColor", topSkyCol);
+                shinyShdr.SetVec4("albedo", gSphInfos[i].mAlbedo);
+                shinyShdr.SetFloat("roughness", gSphInfos[i].mRoughness);
+
+            }
+
+            sphShp.Draw();
+        }
+ 
+
+
         glfwSwapBuffers(window);
 
 
@@ -157,7 +199,7 @@ int main()
     }
 
     triShp.Delete();
-    shdrProg.Delete();
+    shdrProgFalseSky.Delete();
     tex0.Delete();
 
     glfwDestroyWindow(window);

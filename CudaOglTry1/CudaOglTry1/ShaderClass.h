@@ -43,12 +43,15 @@ public:
 		GLuint vShdr = glCreateShader(GL_VERTEX_SHADER);
 		glShaderSource(vShdr, 1, &vsSrc, NULL);
 		glCompileShader(vShdr);
+		checkCompileErrors(vShdr, "VERTEX");
 		GLuint fShdr = glCreateShader(GL_FRAGMENT_SHADER);
 		glShaderSource(fShdr, 1, &fsSrc, NULL);
 		glCompileShader(fShdr);
+		checkCompileErrors(fShdr, "FRAGMENT");
 		mId = glCreateProgram();
 		glAttachShader(mId, vShdr); glAttachShader(mId, fShdr);
 		glLinkProgram(mId);
+		checkCompileErrors(mId, "PROGRAM");
 		glDeleteShader(vShdr); glDeleteShader(fShdr);
 
 	}
@@ -73,6 +76,41 @@ public:
 	void SetMat4(const std::string& name, const glm::mat4& mat) const
 	{
 		glUniformMatrix4fv(glGetUniformLocation(mId, name.c_str()), 1, GL_FALSE, &mat[0][0]);
+	}
+
+	void SetVec4(const std::string& name, const glm::vec4& value) const
+	{
+		glUniform4fv(glGetUniformLocation(mId, name.c_str()), 1, &value[0]);
+	}
+
+	void SetVec3(const std::string& name, const glm::vec3& value) const
+	{
+		glUniform3fv(glGetUniformLocation(mId, name.c_str()), 1, &value[0]);
+	}
+
+
+	void checkCompileErrors(GLuint shader, std::string type)
+	{
+		GLint success;
+		GLchar infoLog[1024];
+		if (type != "PROGRAM")
+		{
+			glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+			if (!success)
+			{
+				glGetShaderInfoLog(shader, 1024, NULL, infoLog);
+				std::cout << "ERROR::SHADER_COMPILATION_ERROR of type: " << type << "\n" << infoLog << "\n -- --------------------------------------------------- -- " << std::endl;
+			}
+		}
+		else
+		{
+			glGetProgramiv(shader, GL_LINK_STATUS, &success);
+			if (!success)
+			{
+				glGetProgramInfoLog(shader, 1024, NULL, infoLog);
+				std::cout << "ERROR::PROGRAM_LINKING_ERROR of type: " << type << "\n" << infoLog << "\n -- --------------------------------------------------- -- " << std::endl;
+			}
+		}
 	}
 
 };

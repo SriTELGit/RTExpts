@@ -93,8 +93,14 @@
     <ClInclude Include="Camera.h" />
     <ClInclude Include="defFS.h" />
     <ClInclude Include="defVS.h" />
+    <ClInclude Include="FalseSkyFS.h" />
+    <ClInclude Include="FalseSkyVS.h" />
+    <ClInclude Include="lambertFS.h" />
+    <ClInclude Include="lambertVS.h" />
     <ClInclude Include="ShaderClass.h" />
     <ClInclude Include="Shape.h" />
+    <ClInclude Include="shinyFS.h" />
+    <ClInclude Include="shinyVS.h" />
     <ClInclude Include="Texture.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
