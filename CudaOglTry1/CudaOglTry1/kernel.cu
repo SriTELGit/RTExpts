@@ -33,8 +33,10 @@ const float ZFAR = 100.0f;
 
 class SphInfo {
 public:
-    SphInfo(glm::vec3 pos, glm::vec4 alb, float r, int t, float rh ) : 
-        mSphPos(pos), mAlbedo(alb), mRad(r), mType(t), mRoughness(rh) {}
+    SphInfo() {}
+    void Set(glm::vec3 pos, glm::vec4 alb, float r, int t, float rh) {
+        mSphPos = pos; mAlbedo = alb; mRad = r; mType = t; mRoughness = rh;
+    }
 
     glm::vec3 mSphPos;
     glm::vec4 mAlbedo;
@@ -43,8 +45,12 @@ public:
     float mRoughness;
 };
 
-vector<SphInfo> gSphInfos;
+const unsigned int NUM_SPH = 4;
+SphInfo* gpSphInfos = NULL; // [NUM_SPH] ;
+
 Camera gCam(RT_WIDTH, RT_HEIGHT, glm::vec3(0.0f, 0.5f, 2.0f));
+bool gRTDone = false;
+Texture* gpRTTex = NULL;
 
 #pragma endregion
 
@@ -122,26 +128,42 @@ __global__ void render(vec3* fb, int max_x, int max_y, int ns, cameraCuda** cam,
     fb[pixel_index] = col;
 }
 
-__global__ void create_world(hitable** d_list, hitable** d_world, cameraCuda** d_camera, int nx, int ny, vec3 cp, vec3 cl, vec3 cu, float fov ) {
+__global__ void create_world(hitable** d_list, hitable** d_world, cameraCuda** d_camera, int nx, int ny, vec3 cp, vec3 cl, vec3 cu, float fov, int sz, SphInfo* sphArr) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        d_list[0] = new sphereCuda(vec3(0, 0, -1), 0.5,
+       /* d_list[0] = new sphereCuda(vec3(0, 0, -1), 0.5,
             new lambertianCuda(vec3(0.1, 0.2, 0.5)));
         d_list[1] = new sphereCuda(vec3(0, -100.5, -1), 100,
             new lambertianCuda(vec3(0.8, 0.8, 0.0)));
         d_list[2] = new sphereCuda(vec3(1, 0, -1), 0.5,
-            new metalCuda(vec3(0.8, 0.6, 0.2), 0.0));
+            new metalCuda(vec3(0.8, 0.6, 0.2), 0.0));*/
 
-        *d_world = new hitable_list(d_list, 3); //fix 3
-        *d_camera = new cameraCuda(cp, //vec3(-2, 2, 1),
-            cl,//vec3(0, 0, -1),
-            cu, //vec3(0, 1, 0),
-            fov, //20.0,
-            float(nx) / float(ny));
+        //`SphInfo** sphArr = (SphInfo**)arrIn;
+
+        for (int i = 0; i < sz; i++) {
+
+
+            SphInfo* spi = (sphArr + i);
+            vec3 alb = vec3(spi->mAlbedo.x, spi->mAlbedo.y, spi->mAlbedo.z);
+
+            material* mt = NULL;
+            if (spi->mType == 0)
+                mt = new lambertianCuda(alb);
+            else
+                mt = new metalCuda(alb, spi->mRoughness);
+
+            d_list[i] = new sphereCuda(
+                vec3(spi->mSphPos.x, spi->mSphPos.y, spi->mSphPos.z),
+                spi->mRad, mt);
+        }
+
+ 
+        *d_world = new hitable_list(d_list, sz); 
+        *d_camera = new cameraCuda(cp, cl, cu, fov, float(nx) / float(ny));
     }
 }
 
-__global__ void free_world(hitable** d_list, hitable** d_world, cameraCuda** d_camera) {
-    for (int i = 0; i < 3; i++) { //fix 3
+__global__ void free_world(hitable** d_list, hitable** d_world, cameraCuda** d_camera, int sz) {
+    for (int i = 0; i < sz; i++) { 
         delete ((sphereCuda*)d_list[i])->mat_ptr;
         delete d_list[i];
     }
@@ -158,6 +180,7 @@ void CudaRT() {
 
     std::cerr << "Rendering a " << RT_WIDTH << "x" << RT_HEIGHT << " image with " << ns << " samples per pixel ";
     std::cerr << "in " << tx << "x" << ty << " blocks.\n";
+    gRTDone = false;
 
     int num_pixels = RT_WIDTH * RT_HEIGHT;
     size_t fb_size = num_pixels * sizeof(vec3);
@@ -172,17 +195,20 @@ void CudaRT() {
 
     // make our world of hitables & the camera
     hitable** d_list; 
-    int numObjInList = 3;
-    checkCudaErrors(cudaMalloc((void**)&d_list, numObjInList * sizeof(hitable*)));
+    //int numObjInList = NUM_SPH;
+    checkCudaErrors(cudaMalloc((void**)&d_list, NUM_SPH * sizeof(hitable*)));
+
+
+
     hitable** d_world;
     checkCudaErrors(cudaMalloc((void**)&d_world, sizeof(hitable*)));
     cameraCuda** d_camera;
     checkCudaErrors(cudaMalloc((void**)&d_camera, sizeof(cameraCuda*)));
-    create_world << <1, 1 >> > (d_list, d_world, d_camera, RT_WIDTH, RT_HEIGHT, 
-        vec3(gCam.mPos.x,gCam.mPos.y,gCam.mPos.z),
+    create_world << <1, 1 >> > (d_list, d_world, d_camera, RT_WIDTH, RT_HEIGHT,
+        vec3(gCam.mPos.x, gCam.mPos.y, gCam.mPos.z),
         vec3(gCam.mLookAt.x, gCam.mLookAt.y, gCam.mLookAt.z),
         vec3(gCam.mUpAc.x, gCam.mUpAc.y, gCam.mUpAc.z),
-        gCam.mFOV
+        gCam.mFOV, NUM_SPH,  gpSphInfos
         );
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
@@ -205,13 +231,20 @@ void CudaRT() {
 
 
     // Output FB as Image
+    if (gpRTTex != NULL) 
+        delete gpRTTex;
+    gpRTTex = new Texture();
 
+    unsigned char* imBytes = (unsigned char*)malloc(num_pixels * 3);
+
+    /*
     ofstream imOut;
     imOut.open("im.ppm");
 
     if (imOut.is_open()) {
 
         imOut << "P3\n" << RT_WIDTH << ' ' << RT_HEIGHT << "\n255\n";
+        */
 
         for (int j = RT_HEIGHT-1; j >= 0; j--) {
             for (int i = 0; i < RT_WIDTH; i++) {
@@ -220,22 +253,33 @@ void CudaRT() {
                 int ig = int(255.99 * fb[pixel_index].g());
                 int ib = int(255.99 * fb[pixel_index].b());
 
-                imOut << ir << ' ' << ig << ' ' << ib << '\n';
+                //imOut << ir << ' ' << ig << ' ' << ib << '\n';
+
+                imBytes[3 * pixel_index]     = ir;
+                imBytes[3 * pixel_index + 1] = ig;
+                imBytes[3 * pixel_index + 2] = ib;
             }
         }
 
-
+        /*
         imOut.close();
 
     }
     else {
         cout << "could not open file to write" << endl;
     }
+    */
+
+    gpRTTex->FillTexWithData(imBytes, 3, RT_WIDTH, RT_HEIGHT);
+
+    free(imBytes);
+
+    gpRTTex->Unbind();
 
 
     // clean up
     checkCudaErrors(cudaDeviceSynchronize());
-    free_world << <1, 1 >> > (d_list, d_world, d_camera);
+    free_world << <1, 1 >> > (d_list, d_world, d_camera, NUM_SPH);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaFree(d_camera));
     checkCudaErrors(cudaFree(d_world));
@@ -243,7 +287,7 @@ void CudaRT() {
     checkCudaErrors(cudaFree(d_rand_state));
     checkCudaErrors(cudaFree(fb));
 
-    
+    gRTDone = true;
 }
 
 
@@ -255,7 +299,7 @@ void KeyCallbk(GLFWwindow* pWin, int key, int scancode, int action, int mods)
 {
 
     if (key == GLFW_KEY_R && action == GLFW_PRESS) { gFreezeCamPosForRT = true;  CudaRT(); }
-    if (key == GLFW_KEY_U && action == GLFW_PRESS) { gFreezeCamPosForRT = false; }
+    if (key == GLFW_KEY_U && action == GLFW_PRESS) { gFreezeCamPosForRT = false;  gRTDone = false; }
 
 
 }
@@ -270,6 +314,12 @@ int main()
 cudaDeviceProp devProp;
 cudaGetDeviceProperties(&devProp, 0);
 std::cerr << "Device 0:" << devProp.name << std::endl;
+
+checkCudaErrors( cudaMallocHost( (void**)&gpSphInfos, NUM_SPH*sizeof(SphInfo) ) );
+gpSphInfos->Set(glm::vec3(0, 0, -1), glm::vec4(0.1, 0.2, 0.5, 1), 0.5, 0, 1.0);
+(gpSphInfos + 1)->Set(glm::vec3(0, -100.5, -1), glm::vec4(0.8, 0.8, 0.0, 1), 100, 0, 1.0);
+(gpSphInfos + 2)->Set(glm::vec3(1.1, 0, -1), glm::vec4(0.8, 0.6, 0.2, 1), 0.5, 1, 0.01);
+(gpSphInfos + 3)->Set(glm::vec3(-1.2, 0, -1), glm::vec4(0.35, 0.47, 0.71, 1), 0.5, 1, 0.25);
 
 
 #pragma endregion
@@ -311,20 +361,17 @@ std::cerr << "Device 0:" << devProp.name << std::endl;
     glm::vec4 botSkyCol = glm::vec4(1, 1, 1, 1);
     glm::vec4 topSkyCol = glm::vec4(0.5, 0.7, 1, 1);
 
-    gSphInfos.push_back(SphInfo(glm::vec3(0, 0, -1),            glm::vec4(0.1, 0.2, 0.5, 1), 0.5, 0, 1.0));
-    gSphInfos.push_back(SphInfo(glm::vec3(0, -100.5, -1),       glm::vec4(0.8, 0.8, 0.0, 1), 100, 0, 1.0));
-    gSphInfos.push_back(SphInfo(glm::vec3(1.1, 0, -1),          glm::vec4(0.8, 0.6, 0.2, 1), 0.5, 1, 0.2));
-    gSphInfos.push_back(SphInfo(glm::vec3(-1.2, 0, -1),         glm::vec4(0.71, 0.47, 0.35, 1), 0.5, 1, 0.5));
 
 
     Shader shdrProgFalseSky("FalseSkyVS.h", "FalseSkyFS.h");
     Shader lambertShdr("lambertVS.h", "lambertFS.h");
     Shader shinyShdr("shinyVS.h", "shinyFS.h");
+    Shader rtTexShdr("rtTexVS.h", "rtTexFS.h");
 
     Shape triShp(vertices, sizeof(vertices), indices, sizeof(indices));
     Sphere sphShp; sphShp.Create();
 
-    Texture tex0("brick.png");
+    //Texture tex0("brick.png");
 
     float rotation = 0.0f;
     double prevTime = glfwGetTime();
@@ -363,14 +410,14 @@ std::cerr << "Device 0:" << devProp.name << std::endl;
         triShp.Draw();
 
         //draw lambertspheres
-        for (int i = 0; i < gSphInfos.size(); i++) {
+        for (int i = 0; i < NUM_SPH; i++) {
 
             model = glm::mat4(1.0f);
-            float sc = gSphInfos[i].mRad * 2.0f;
-            model = glm::translate(model, gSphInfos[i].mSphPos);
+            float sc = (gpSphInfos + i)->mRad * 2.0f;
+            model = glm::translate(model, (gpSphInfos + i)->mSphPos);
             model = glm::scale(model, glm::vec3(sc,sc,sc));
 
-            if (gSphInfos[i].mType == 0) {
+            if ((gpSphInfos + i)->mType == 0) {
 
                 lambertShdr.Activate();
                 lambertShdr.SetMat4("model", model);
@@ -378,10 +425,10 @@ std::cerr << "Device 0:" << devProp.name << std::endl;
                 lambertShdr.SetMat4("proj", gCam.mProj);
                 lambertShdr.SetVec4("botSkyColor", botSkyCol);
                 lambertShdr.SetVec4("topSkyColor", topSkyCol);
-                lambertShdr.SetVec4("albedo", gSphInfos[i].mAlbedo);
+                lambertShdr.SetVec4("albedo", (gpSphInfos + i)->mAlbedo);
 
             }
-            else if (gSphInfos[i].mType == 1) {
+            else if ((gpSphInfos + i)->mType == 1) {
 
                 shinyShdr.Activate();
                 shinyShdr.SetMat4("model", model);
@@ -390,12 +437,22 @@ std::cerr << "Device 0:" << devProp.name << std::endl;
                 shinyShdr.SetVec3("camPosW", gCam.mPos);
                 shinyShdr.SetVec4("botSkyColor", botSkyCol);
                 shinyShdr.SetVec4("topSkyColor", topSkyCol);
-                shinyShdr.SetVec4("albedo", gSphInfos[i].mAlbedo);
-                shinyShdr.SetFloat("roughness", gSphInfos[i].mRoughness);
+                shinyShdr.SetVec4("albedo", (gpSphInfos + i)->mAlbedo);
+                shinyShdr.SetFloat("roughness", (gpSphInfos + i)->mRoughness);
 
             }
 
             sphShp.Draw();
+        }
+
+        if ((gFreezeCamPosForRT == true) && (gRTDone == true))
+        {
+            //render quad with RT image texture
+            rtTexShdr.Activate();
+            gpRTTex->ActivateAndBind();
+            rtTexShdr.SetInt("texture0", 0);
+
+            triShp.Draw();
         }
  
 
@@ -410,7 +467,11 @@ std::cerr << "Device 0:" << devProp.name << std::endl;
 
     triShp.Delete();
     shdrProgFalseSky.Delete();
-    tex0.Delete();
+    //tex0.Delete();
+    if (gpRTTex != NULL)
+        delete gpRTTex;
+
+    //delete[] gpSphInfos;
 
     glfwDestroyWindow(window);
     glfwTerminate();
@@ -419,6 +480,7 @@ std::cerr << "Device 0:" << devProp.name << std::endl;
 
 #pragma region cuda_cleanup
 
+checkCudaErrors(cudaFreeHost(gpSphInfos));
 cudaDeviceReset();
 
 #pragma endregion
