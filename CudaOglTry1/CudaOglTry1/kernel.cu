@@ -45,7 +45,7 @@ public:
     float mRoughness;
 };
 
-const unsigned int NUM_SPH = 4;
+const unsigned int NUM_SPH = 9;
 SphInfo* gpSphInfos = NULL; // [NUM_SPH] ;
 
 Camera gCam(RT_WIDTH, RT_HEIGHT, glm::vec3(0.0f, 0.5f, 2.0f));
@@ -316,10 +316,17 @@ cudaGetDeviceProperties(&devProp, 0);
 std::cerr << "Device 0:" << devProp.name << std::endl;
 
 checkCudaErrors( cudaMallocHost( (void**)&gpSphInfos, NUM_SPH*sizeof(SphInfo) ) );
-gpSphInfos->Set(glm::vec3(0, 0, -1), glm::vec4(0.1, 0.2, 0.5, 1), 0.5, 0, 1.0);
-(gpSphInfos + 1)->Set(glm::vec3(0, -100.5, -1), glm::vec4(0.8, 0.8, 0.0, 1), 100, 0, 1.0);
-(gpSphInfos + 2)->Set(glm::vec3(1.1, 0, -1), glm::vec4(0.8, 0.6, 0.2, 1), 0.5, 1, 0.01);
-(gpSphInfos + 3)->Set(glm::vec3(-1.2, 0, -1), glm::vec4(0.35, 0.47, 0.71, 1), 0.5, 1, 0.25);
+gpSphInfos->Set(        glm::vec3(0, 0, -1),        glm::vec4(0.1, 0.2, 0.5, 1),        0.5, 0, 1.0);
+(gpSphInfos + 1)->Set(  glm::vec3(0, -100.5, -1),   glm::vec4(0.8, 0.8, 0.0, 1),        100, 0, 1.0);
+(gpSphInfos + 2)->Set(  glm::vec3(1.5, 0, -1),      glm::vec4(0.8, 0.6, 0.2, 1),        0.5, 1, 0.01);
+(gpSphInfos + 3)->Set(  glm::vec3(-1.6, 0, -1),     glm::vec4(0.35, 0.47, 0.71, 1),     0.5, 1, 0.25);
+
+(gpSphInfos + 4)->Set(glm::vec3(0.5, -0.25, 0.5),       glm::vec4(0.04, 0.94, 0.55, 1),     0.25, 1, 0.2);
+(gpSphInfos + 5)->Set(glm::vec3(-0.5, -0.2, 1.1),      glm::vec4(0.63, 0.27, 0.63, 1),     0.3, 0, 0.3);
+(gpSphInfos + 6)->Set(glm::vec3(-1.1, -0.35, 0.6),      glm::vec4(0.98, 0.78, 0.04, 1),     0.15, 1, 0.4);
+
+(gpSphInfos + 7)->Set(glm::vec3(0.3, -0.2, -2.3),      glm::vec4(0.43, 0.59, 0.74, 1),     0.3, 0, 0.1);
+(gpSphInfos + 8)->Set(glm::vec3(-0.7, -0.2, -2.4),     glm::vec4(0.78, 0.51, 0.74, 1),     0.25, 1, 0.1);
 
 
 #pragma endregion
